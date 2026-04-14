@@ -2,9 +2,10 @@ import { loadOrCreateKeypair, getPublicKeyBase64, encryptNoteForTesting } from '
 import { loadConfig, ensureFolders } from './config'
 import { buildQRPayload, printQRCode } from './qr'
 import { createServer } from './server'
+import { decodeBase64 } from 'tweetnacl-util'
 
 async function main() {
-  console.log('\n⬡  VaultCast Daemon starting...\n')
+  console.log('\n  VaultCast Daemon starting...\n')
 
   // 1. Load config (creates defaults on first run)
   const config = loadConfig()
@@ -34,29 +35,24 @@ async function main() {
     process.exit(1)
   }
 
-  // ── Dev/test helper ─────────────────────────────────────────────────────────
-  // Uncomment this block to simulate a note coming in from the mobile app.
-  // Sends a test encrypted note to the local server immediately after startup.
-  //
-  // import { decodeBase64 } from 'tweetnacl-util'
-  // setTimeout(async () => {
-  //   const { encryptNoteForTesting } = await import('./crypto')
-  //   const { decodeBase64 } = await import('tweetnacl-util')
-  //   const pubKey = decodeBase64(publicKeyBase64)
-  //   const testNote = {
-  //     title: 'Test Note from Simulator',
-  //     body: '## Notes\n\nThis is a simulated note from the dev test helper.\n\n## Action Items\n\n- [ ] Verify decryption works end to end',
-  //     frontmatter: { date: new Date().toISOString().split('T')[0], tags: ['test'] },
-  //     createdAt: new Date().toISOString(),
-  //   }
-  //   const encrypted = encryptNoteForTesting(JSON.stringify(testNote), pubKey)
-  //   const res = await fetch(`http://localhost:${config.daemon.port}/notes`, {
-  //     method: 'POST',
-  //     headers: { 'Content-Type': 'application/json' },
-  //     body: JSON.stringify(encrypted),
-  //   })
-  //   console.log('[test] Simulated note response:', await res.json())
-  // }, 1000)
+  // Dev test helper — fires a simulated encrypted note at the server after 1 second.
+  // Comment this block out once the roundtrip is confirmed working.
+  setTimeout(async () => {
+    const pubKey = decodeBase64(publicKeyBase64)
+    const testNote = {
+      title: 'Test Note from Simulator',
+      body: '## Notes\n\nThis is a simulated note from the dev test helper.\n\n## Action Items\n\n- [ ] Verify decryption works end to end',
+      frontmatter: { date: new Date().toISOString().split('T')[0], tags: ['test'] },
+      createdAt: new Date().toISOString(),
+    }
+    const encrypted = encryptNoteForTesting(JSON.stringify(testNote), pubKey)
+    const res = await fetch(`http://localhost:${config.daemon.port}/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(encrypted),
+    })
+    console.log('[test] Simulated note response:', await res.json())
+  }, 1000)
 }
 
 main().catch((err) => {

@@ -1,7 +1,13 @@
 import nacl from 'tweetnacl'
-import { encodeBase64, decodeBase64, encodeUTF8, decodeUTF8 } from 'tweetnacl-util'
+import { encodeBase64, decodeBase64 } from 'tweetnacl-util'
 import keytar from 'keytar'
 import type { EncryptedNotePayload } from './types'
+
+// Use Node's Buffer for string ↔ Uint8Array — avoids tweetnacl-util's
+// confusingly named encodeUTF8/decodeUTF8 which are backwards from what
+// you'd expect (encodeUTF8 goes Uint8Array→string, decodeUTF8 goes string→Uint8Array)
+const toBytes = (s: string): Uint8Array => Buffer.from(s, 'utf8')
+const toString = (b: Uint8Array): string => Buffer.from(b).toString('utf8')
 
 const KEYTAR_SERVICE = 'vaultcast-daemon'
 const KEYTAR_ACCOUNT_PUBLIC = 'publicKey'
@@ -70,7 +76,7 @@ export async function decryptNote(
     throw new Error('Decryption failed — payload may be corrupt or from an unpaired device.')
   }
 
-  return decodeUTF8(decrypted)
+  return toString(decrypted)
 }
 
 // ─── Test helper (dev only) ───────────────────────────────────────────────────
@@ -86,7 +92,7 @@ export function encryptNoteForTesting(
 ): EncryptedNotePayload {
   const ephemeralKeypair = nacl.box.keyPair()
   const nonce = nacl.randomBytes(nacl.box.nonceLength)
-  const message = encodeUTF8(plaintext)
+  const message = toBytes(plaintext)
 
   const ciphertext = nacl.box(message, nonce, daemonPublicKey, ephemeralKeypair.secretKey)
 
