@@ -1,0 +1,26 @@
+{
+  "name": "vaultcast-daemon",
+  "version": "0.1.0",
+  "description": "VaultCast desktop daemon — receives encrypted voice notes from the VaultCast mobile app and writes them to your vault",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@iarna/toml": "^2.2.5",
+    "bonjour-service": "^1.2.1",
+    "fastify": "^4.26.2",
+    "keytar": "^7.9.0",
+    "qrcode-terminal": "^0.12.0",
+    "tweetnacl": "^1.0.3",
+    "tweetnacl-util": "^0.15.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/qrcode-terminal": "^0.12.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
