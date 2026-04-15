@@ -1,17 +1,21 @@
 import Fastify from 'fastify'
 import fs from 'fs'
 import path from 'path'
-import { decryptNote } from './crypto'
+import { decryptNote, verifyHMAC } from './crypto'
 import type { EncryptedNotePayload, NotePayload, DaemonConfig } from './types'
+
+const SIGNATURE_HEADER = 'x-vaultcast-signature'
+const MAX_BODY_BYTES = 1024 * 512  // 512 KB — generous ceiling for a structured note
 
 // ─── Server factory ───────────────────────────────────────────────────────────
 
-export function createServer(secretKey: Uint8Array, config: DaemonConfig) {
+export function createServer(secretKey: Uint8Array, sharedSecret: string, config: DaemonConfig) {
   const fastify = Fastify({
     logger: config.daemon.logLevel === 'debug',
+    bodyLimit: MAX_BODY_BYTES,
   })
 
-  // ── Health check ────────────────────────────────────────────────────────────
+  // ── Health check (unauthenticated — mobile uses this to detect daemon) ──────
   fastify.get('/status', async () => {
     return {
       status: 'ok',
@@ -22,9 +26,20 @@ export function createServer(secretKey: Uint8Array, config: DaemonConfig) {
 
   // ── Receive encrypted note ──────────────────────────────────────────────────
   fastify.post<{ Body: EncryptedNotePayload }>('/notes', async (request, reply) => {
-    const payload = request.body
+    // 1. Verify HMAC signature before doing anything else
+    const signature = request.headers[SIGNATURE_HEADER]
+    if (!signature || typeof signature !== 'string') {
+      return reply.status(401).send({ error: 'Missing signature header.' })
+    }
 
-    // Basic shape validation
+    const rawBody = JSON.stringify(request.body)
+    if (!verifyHMAC(sharedSecret, rawBody, signature)) {
+      console.warn('[server] Rejected request — invalid HMAC signature.')
+      return reply.status(401).send({ error: 'Invalid signature.' })
+    }
+
+    // 2. Shape validation
+    const payload = request.body
     if (!payload.ephemeralPublicKey || !payload.nonce || !payload.ciphertext) {
       return reply.status(400).send({ error: 'Invalid payload — missing required fields.' })
     }

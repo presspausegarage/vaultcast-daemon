@@ -1,5 +1,6 @@
 import nacl from 'tweetnacl'
 import { encodeBase64, decodeBase64 } from 'tweetnacl-util'
+import { createHmac, randomBytes, timingSafeEqual } from 'crypto'
 import keytar from 'keytar'
 import type { EncryptedNotePayload } from './types'
 
@@ -12,6 +13,7 @@ const toString = (b: Uint8Array): string => Buffer.from(b).toString('utf8')
 const KEYTAR_SERVICE = 'vaultcast-daemon'
 const KEYTAR_ACCOUNT_PUBLIC = 'publicKey'
 const KEYTAR_ACCOUNT_SECRET = 'secretKey'
+const KEYTAR_ACCOUNT_SHARED = 'sharedSecret'
 
 // ─── Keypair management ───────────────────────────────────────────────────────
 
@@ -77,6 +79,44 @@ export async function decryptNote(
   }
 
   return toString(decrypted)
+}
+
+// ─── Shared secret (HMAC auth) ────────────────────────────────────────────────
+
+/**
+ * Load the shared secret from the OS keychain, or generate and store a new one.
+ * The secret is included in the QR payload once and stored permanently on both sides.
+ */
+export async function loadOrCreateSharedSecret(): Promise<string> {
+  const stored = await keytar.getPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT_SHARED)
+  if (stored) return stored
+
+  const secret = randomBytes(32).toString('hex')
+  await keytar.setPassword(KEYTAR_SERVICE, KEYTAR_ACCOUNT_SHARED, secret)
+  console.log('[crypto] Generated new shared secret and stored in OS keychain.')
+  return secret
+}
+
+/**
+ * Compute HMAC-SHA256 of a request body using the shared secret.
+ * Used in the test helper to simulate a signed mobile request.
+ */
+export function computeHMAC(secret: string, body: string): string {
+  return createHmac('sha256', secret).update(body).digest('hex')
+}
+
+/**
+ * Verify an incoming HMAC signature against the expected value.
+ * Uses timingSafeEqual to prevent timing attacks.
+ */
+export function verifyHMAC(secret: string, body: string, signature: string): boolean {
+  const expected = computeHMAC(secret, body)
+  try {
+    return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'))
+  } catch {
+    // Buffers of different lengths throw — treat as invalid
+    return false
+  }
 }
 
 // ─── Test helper (dev only) ───────────────────────────────────────────────────

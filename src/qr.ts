@@ -33,12 +33,14 @@ export function getLocalIP(): string {
  */
 export function buildQRPayload(
   publicKeyBase64: string,
+  sharedSecret: string,
   port: number,
   vaultPath: string,
   fallbackPath: string
 ): QRPayload {
   return {
     publicKey: publicKeyBase64,
+    sharedSecret,
     ip: getLocalIP(),
     port,
     vaultPath,

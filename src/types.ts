@@ -36,6 +36,7 @@ export interface WriteResult {
 
 export interface QRPayload {
   publicKey: string     // base64 — daemon's Curve25519 public key
+  sharedSecret: string  // hex — HMAC signing secret for request authentication
   ip: string            // local IP of the desktop
   port: number          // daemon HTTP port
   vaultPath: string     // absolute path to the vault folder
