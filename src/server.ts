@@ -77,9 +77,20 @@ export function createServer(secretKey: Uint8Array, sharedSecret: string, config
 /**
  * Write a decrypted NotePayload as a .md file.
  * Tries the configured vault path first; falls back to the fallback folder.
+ *
+ * Filename format: `YYYY-MM-DD-HHmmss-<slugified-title>.md`
+ * The timestamp prefix (1) sorts notes chronologically in any file listing
+ * and (2) prevents collisions — short transcripts like "voice note" or
+ * "what was that" were overwriting each other before this change.
+ * We use note.createdAt (ISO 8601 from the mobile capture moment) rather
+ * than `new Date()` so the filename reflects when the note was SPOKEN,
+ * not when the daemon happened to receive it — queued notes that deliver
+ * late still sort correctly.
  */
 function writeNoteToFile(note: NotePayload, config: DaemonConfig): string {
-  const filename = sanitizeFilename(note.title || 'untitled') + '.md'
+  const timestamp = toFilenameTimestamp(note.createdAt)
+  const slug = sanitizeFilename(note.title || 'untitled')
+  const filename = `${timestamp}-${slug}.md`
   const content = buildMarkdown(note)
 
   // Try vault path first
@@ -99,6 +110,22 @@ function writeNoteToFile(note: NotePayload, config: DaemonConfig): string {
   fs.mkdirSync(config.adapter.fallbackPath, { recursive: true })
   fs.writeFileSync(fallbackTarget, content, 'utf-8')
   return fallbackTarget
+}
+
+/**
+ * Turn an ISO 8601 timestamp (e.g. "2026-04-16T22:31:45.123Z") into a
+ * filesystem-safe, sortable prefix ("2026-04-16-223145").
+ * Falls back to the server's current time if the input is missing/invalid —
+ * we never want filename generation to fail and drop the note.
+ */
+function toFilenameTimestamp(iso: string | undefined): string {
+  const date = iso ? new Date(iso) : new Date()
+  const d = Number.isNaN(date.getTime()) ? new Date() : date
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-` +
+    `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
+  )
 }
 
 /**
