@@ -39,8 +39,8 @@ export interface QRPayload {
   sharedSecret: string  // hex — HMAC signing secret for request authentication
   ip: string            // local IP of the desktop
   port: number          // daemon HTTP port
-  vaultPath: string     // absolute path to the vault folder
-  fallbackPath: string  // absolute path to the fallback folder
+  // vaultPath and fallbackPath intentionally omitted — daemon knows its own paths,
+  // keeping the QR payload small improves scan reliability
 }
 
 // ─── Daemon config (persisted to ~/.vaultcast/config.toml) ───────────────────
@@ -49,6 +49,11 @@ export interface DaemonConfig {
   daemon: {
     port: number
     logLevel: 'debug' | 'info' | 'warn' | 'error'
+    // Optional override for the IP/hostname advertised to the mobile app via
+    // the QR code. Leave unset to let the daemon auto-detect a LAN address.
+    // Useful on machines where auto-detection picks the wrong interface
+    // (e.g. Tailscale CGNAT) or when you want to advertise a mDNS hostname.
+    host?: string
   }
   adapter: {
     type: 'obsidian' | 'notion' | 'affine' | 'logseq' | 'anytype' | 'folder'

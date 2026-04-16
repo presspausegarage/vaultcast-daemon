@@ -16,23 +16,29 @@ async function main() {
   const publicKeyBase64 = await getPublicKeyBase64()
   const sharedSecret = await loadOrCreateSharedSecret()
 
-  // 3. Build and display QR code for mobile pairing
+  // 3. Build and display QR code for mobile pairing.
+  //    getLocalIP() picks an RFC 1918 LAN address by default; config.daemon.host
+  //    overrides it for users on networks where auto-detection picks wrong
+  //    (e.g. Tailscale 100.x.x.x CGNAT interface on a machine with Tailscale).
+  const advertisedIP = getLocalIP(config.daemon.host)
   const qrPayload = buildQRPayload(
     publicKeyBase64,
     sharedSecret,
     config.daemon.port,
-    config.adapter.vaultPath,
-    config.adapter.fallbackPath
+    advertisedIP
   )
-  printQRCode(qrPayload)
+  printQRCode(qrPayload, config.adapter.vaultPath, config.adapter.fallbackPath)
 
-  // 4. Start HTTP server — bind to local IP only, not all interfaces
+  // 4. Start HTTP server. Bind to 0.0.0.0 so the server is reachable on every
+  //    local interface — the QR tells the phone which IP to dial, but binding
+  //    all interfaces is more robust when the machine has multiple LANs or an
+  //    IP change (DHCP lease renewal). Security is handled by HMAC signing +
+  //    NaCl encryption — binding a specific interface added no real protection.
   const server = createServer(secretKey, sharedSecret, config)
-  const localIP = getLocalIP()
 
   try {
-    await server.listen({ port: config.daemon.port, host: localIP })
-    console.log(`[daemon] Listening on ${localIP}:${config.daemon.port}`)
+    await server.listen({ port: config.daemon.port, host: '0.0.0.0' })
+    console.log(`[daemon] Listening on 0.0.0.0:${config.daemon.port} — phone should dial ${advertisedIP}:${config.daemon.port}`)
   } catch (err) {
     console.error('[daemon] Failed to start server:', err)
     process.exit(1)
