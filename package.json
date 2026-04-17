@@ -5,20 +5,27 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node src/index.ts",
+    "tray": "ts-node src/tray.ts",
+    "tray:prod": "node dist/tray.js",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "install-autostart": "node dist/autostart.js install",
+    "uninstall-autostart": "node dist/autostart.js uninstall"
   },
   "dependencies": {
     "@iarna/toml": "^2.2.5",
     "bonjour-service": "^1.2.1",
     "fastify": "^4.26.2",
     "keytar": "^7.9.0",
+    "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
+    "systray2": "^2.1.4",
     "tweetnacl": "^1.0.3",
     "tweetnacl-util": "^0.15.1"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
+    "@types/qrcode": "^1.5.6",
     "@types/qrcode-terminal": "^0.12.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
