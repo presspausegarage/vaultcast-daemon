@@ -13,9 +13,14 @@ const DEFAULTS: DaemonConfig = {
     logLevel: 'info',
   },
   adapter: {
+    // Default to "folder" so a fresh install always works even if the user
+    // hasn't configured a vault. Once they edit config.toml and point
+    // vaultPath at their Obsidian vault, they flip this to "obsidian" and
+    // the inboxFolder kicks in.
     type: 'folder',
     vaultPath: path.join(os.homedir(), 'VaultCast-Inbox'),
     fallbackPath: path.join(os.homedir(), 'VaultCast-Inbox'),
+    inboxFolder: 'VaultCast-Inbox',
   },
 }
 

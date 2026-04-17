@@ -59,5 +59,10 @@ export interface DaemonConfig {
     type: 'obsidian' | 'notion' | 'affine' | 'logseq' | 'anytype' | 'folder'
     vaultPath: string
     fallbackPath: string
+    // Subfolder (relative to vaultPath) where notes are dropped. Used by
+    // adapters like Obsidian that benefit from keeping imports separate
+    // from the user's organised structure. Defaults to "VaultCast-Inbox".
+    // The folder adapter ignores this and writes flat into vaultPath.
+    inboxFolder?: string
   }
 }
