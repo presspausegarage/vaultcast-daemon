@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import QRCode from 'qrcode'
-import { decryptNote, verifyHMAC } from './crypto'
+import { buildSigningInput, decryptNote, verifyHMAC } from './crypto'
+import { ReplayCache, isTimestampFresh } from './replay'
 import type {
   Adapter,
   EncryptedNotePayload,
@@ -10,7 +11,17 @@ import type {
 } from './types'
 
 const SIGNATURE_HEADER = 'x-vaultcast-signature'
+const TIMESTAMP_HEADER = 'x-vaultcast-timestamp'
+const NONCE_HEADER = 'x-vaultcast-nonce'
 const MAX_BODY_BYTES = 1024 * 512  // 512 KB — generous ceiling for a structured note
+
+// Attach the raw request bytes to FastifyRequest so /notes can HMAC over
+// exactly what the client signed, not a re-stringified copy.
+declare module 'fastify' {
+  interface FastifyRequest {
+    rawBody?: Buffer
+  }
+}
 
 // ─── Server factory ───────────────────────────────────────────────────────────
 
@@ -33,6 +44,27 @@ export function createServer(
     logger: config.daemon.logLevel === 'debug',
     bodyLimit: MAX_BODY_BYTES,
   })
+
+  const replayCache = new ReplayCache()
+
+  // Capture the raw body during JSON parsing. Fastify's default parser discards
+  // the buffer, which would force us to re-stringify for HMAC verification —
+  // that's exactly the fragility we're trying to avoid.
+  fastify.addContentTypeParser(
+    'application/json',
+    { parseAs: 'buffer' },
+    (req, body, done) => {
+      const buf = body as Buffer
+      req.rawBody = buf
+      try {
+        const text = buf.toString('utf8')
+        const parsed = text.length === 0 ? {} : JSON.parse(text)
+        done(null, parsed)
+      } catch (err) {
+        done(err as Error, undefined)
+      }
+    }
+  )
 
   // ── Health check (unauthenticated — mobile uses this to detect daemon) ──────
   fastify.get('/status', async () => {
@@ -67,25 +99,50 @@ export function createServer(
 
   // ── Receive encrypted note ──────────────────────────────────────────────────
   fastify.post<{ Body: EncryptedNotePayload }>('/notes', async (request, reply) => {
-    // 1. Verify HMAC signature before doing anything else
+    // 1. Auth headers present?
     const signature = request.headers[SIGNATURE_HEADER]
-    if (!signature || typeof signature !== 'string') {
-      return reply.status(401).send({ error: 'Missing signature header.' })
+    const timestamp = request.headers[TIMESTAMP_HEADER]
+    const nonce = request.headers[NONCE_HEADER]
+    if (
+      typeof signature !== 'string' ||
+      typeof timestamp !== 'string' ||
+      typeof nonce !== 'string'
+    ) {
+      return reply.status(401).send({ error: 'Missing auth headers.' })
     }
 
-    const rawBody = JSON.stringify(request.body)
-    if (!verifyHMAC(sharedSecret, rawBody, signature)) {
+    // 2. Timestamp within skew window — rejects ancient captures outright.
+    if (!isTimestampFresh(timestamp)) {
+      console.warn('[server] Rejected request — timestamp outside skew window.')
+      return reply.status(401).send({ error: 'Stale or skewed timestamp.' })
+    }
+
+    // 3. HMAC over the raw bytes the client signed, bound to timestamp + nonce.
+    const rawBody = request.rawBody
+    if (!rawBody) {
+      return reply.status(400).send({ error: 'Missing request body.' })
+    }
+    const signingInput = buildSigningInput(timestamp, nonce, rawBody)
+    if (!verifyHMAC(sharedSecret, signingInput, signature)) {
       console.warn('[server] Rejected request — invalid HMAC signature.')
       return reply.status(401).send({ error: 'Invalid signature.' })
     }
 
-    // 2. Shape validation
+    // 4. Replay check — only after the signature proves the nonce came from
+    //    someone holding the shared secret. Otherwise anyone could poison the
+    //    cache with arbitrary nonces and DoS legitimate requests.
+    if (!replayCache.checkAndRecord(nonce)) {
+      console.warn('[server] Rejected request — replayed nonce.')
+      return reply.status(401).send({ error: 'Replay detected.' })
+    }
+
+    // 5. Shape validation
     const payload = request.body
     if (!payload.ephemeralPublicKey || !payload.nonce || !payload.ciphertext) {
       return reply.status(400).send({ error: 'Invalid payload — missing required fields.' })
     }
 
-    // 3. Decrypt
+    // 6. Decrypt
     let plaintext: string
     try {
       plaintext = await decryptNote(payload, secretKey)
@@ -94,7 +151,7 @@ export function createServer(
       return reply.status(422).send({ error: 'Decryption failed.' })
     }
 
-    // 4. Parse
+    // 7. Parse
     let note: NotePayload
     try {
       note = JSON.parse(plaintext) as NotePayload
@@ -102,7 +159,7 @@ export function createServer(
       return reply.status(422).send({ error: 'Decrypted payload is not valid JSON.' })
     }
 
-    // 5. Hand off to the adapter — it decides where and how to write.
+    // 8. Hand off to the adapter — it decides where and how to write.
     try {
       const result = await adapter.write(note)
       if (!result.success) {

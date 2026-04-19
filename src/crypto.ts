@@ -98,25 +98,43 @@ export async function loadOrCreateSharedSecret(): Promise<string> {
 }
 
 /**
- * Compute HMAC-SHA256 of a request body using the shared secret.
- * Used in the test helper to simulate a signed mobile request.
+ * Compute HMAC-SHA256 of a signing input using the shared secret.
+ * The input is usually built by buildSigningInput().
  */
-export function computeHMAC(secret: string, body: string): string {
-  return createHmac('sha256', secret).update(body).digest('hex')
+export function computeHMAC(secret: string, input: string | Buffer): string {
+  return createHmac('sha256', secret).update(input).digest('hex')
 }
 
 /**
  * Verify an incoming HMAC signature against the expected value.
  * Uses timingSafeEqual to prevent timing attacks.
  */
-export function verifyHMAC(secret: string, body: string, signature: string): boolean {
-  const expected = computeHMAC(secret, body)
+export function verifyHMAC(secret: string, input: string | Buffer, signature: string): boolean {
+  const expected = computeHMAC(secret, input)
   try {
     return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(signature, 'hex'))
   } catch {
     // Buffers of different lengths throw — treat as invalid
     return false
   }
+}
+
+/**
+ * Canonical signing input for an authenticated request:
+ *   timestamp + "\n" + nonce + "\n" + rawBody
+ *
+ * The mobile side builds the identical string before HMAC'ing. Using the raw
+ * request bytes (not re-stringified JSON) avoids subtle mismatches if key
+ * order, whitespace, or Unicode escapes ever differ between the two runtimes.
+ */
+export function buildSigningInput(
+  timestamp: string,
+  nonce: string,
+  body: Buffer | string
+): Buffer {
+  const prefix = Buffer.from(`${timestamp}\n${nonce}\n`, 'utf8')
+  const bodyBuf = typeof body === 'string' ? Buffer.from(body, 'utf8') : body
+  return Buffer.concat([prefix, bodyBuf])
 }
 
 // ─── Test helper (dev only) ───────────────────────────────────────────────────
