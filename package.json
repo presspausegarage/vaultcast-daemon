@@ -15,7 +15,7 @@
   "dependencies": {
     "@iarna/toml": "^2.2.5",
     "bonjour-service": "^1.4.0",
-    "fastify": "^4.26.2",
+    "fastify": "^5.9.0",
     "keytar": "^7.9.0",
     "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
